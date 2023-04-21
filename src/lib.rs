@@ -3,6 +3,8 @@ use nom::{
     bytes::complete::{is_not, tag},
 };
 
+// See https://docs.rs/nom/latest/nom/all.html#functions for other functions that are available
+
 #[derive(PartialEq, Eq, Debug)]
 pub struct Host {
     pub name: String,
