@@ -1,3 +1,9 @@
+use nom::{
+    branch::alt,
+    bytes::complete::{is_not, tag},
+    character::is_newline,
+};
+
 #[derive(PartialEq, Eq, Debug)]
 pub struct Host {
     pub name: String,
@@ -13,6 +19,12 @@ impl Host {
     }
 }
 
+impl From<&str> for Host {
+    fn from(value: &str) -> Self {
+        Self::new(value.to_string())
+    }
+}
+
 #[derive(PartialEq, Eq, Debug)]
 pub enum DsmEvent {
     UpsBatteryMode(Host),
@@ -22,7 +34,35 @@ pub enum DsmEvent {
 
 /// Parses an event message and returns an event if it starts with one and the rest of the unparsed message otherwise it returns an error if no event is found
 pub fn parse_msg(msg: &str) -> nom::IResult<&str, DsmEvent> {
-    todo!()
+    alt((ups_battery_mode, ups_low_battery, test_msg))(msg)
+}
+
+fn ups_battery_mode(input: &str) -> nom::IResult<&str, DsmEvent> {
+    let (input, _) = tag("The UPS device connected to ")(input)?;
+    let (input, name) = is_not(" ")(input)?;
+    let (input, _) = tag(" has entered battery mode.")(input)?;
+    let (input, battery_msg) = is_not("\n")(input)?;
+    Ok((
+        input,
+        DsmEvent::UpsBatteryMode(Host {
+            name: name.trim().to_string(),
+            battery_msg: Some(battery_msg.trim().to_string()),
+        }),
+    ))
+}
+
+fn ups_low_battery(input: &str) -> nom::IResult<&str, DsmEvent> {
+    let (input, _) = tag("The UPS device connected to ")(input)?;
+    let (input, name) = is_not(". ")(input)?;
+    let (input, _) = tag(" has reached low battery.")(input)?;
+    Ok((input, DsmEvent::UpsLowBattery(name.trim().into())))
+}
+
+fn test_msg(input: &str) -> nom::IResult<&str, DsmEvent> {
+    let (input, _) = tag("Test Message from ")(input)?;
+    let (input, name) = is_not(". ")(input)?;
+    let (input, _) = tag(".")(input)?;
+    Ok((input, DsmEvent::Test(name.trim().into())))
 }
 
 #[cfg(test)]
@@ -30,7 +70,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn case1() {
+    fn case_test() {
         let event_msg = "Test Message from COMPUTER1.";
 
         let (remainder_of_msg, result) = parse_msg(event_msg).expect("This one should pass");
@@ -40,7 +80,7 @@ mod tests {
     }
 
     #[test]
-    fn case2() {
+    fn case_bat_mode() {
         let event_msg =
 "The UPS device connected to COMPUTER2 has entered battery mode. The battery level is 99%
 
@@ -56,7 +96,7 @@ From COMPUTER2";
     }
 
     #[test]
-    fn case3() {
+    fn case_low_bat() {
         let event_msg = "The UPS device connected to COMPUTER3 has reached low battery.";
 
         let (remainder_of_msg, result) = parse_msg(event_msg).expect("This one should pass");
@@ -66,7 +106,7 @@ From COMPUTER2";
     }
 
     #[test]
-    fn case4() {
+    fn case_is_err() {
         let event_msg = "Some random message about something else";
 
         let result: Result<_, _> = parse_msg(event_msg);
