@@ -1,7 +1,6 @@
 use nom::{
     branch::alt,
     bytes::complete::{is_not, tag},
-    character::is_newline,
 };
 
 #[derive(PartialEq, Eq, Debug)]
@@ -29,12 +28,41 @@ impl From<&str> for Host {
 pub enum DsmEvent {
     UpsBatteryMode(Host),
     UpsLowBattery(Host),
+    UpsAcMode(Host),
+    UpsConnectionLost(Host),
+    UpsConnected(Host),
     Test(Host),
 }
 
 /// Parses an event message and returns an event if it starts with one and the rest of the unparsed message otherwise it returns an error if no event is found
 pub fn parse_msg(msg: &str) -> nom::IResult<&str, DsmEvent> {
-    alt((ups_battery_mode, ups_low_battery, test_msg))(msg)
+    alt((
+        ups_battery_mode,
+        ups_low_battery,
+        test_msg,
+        ups_ac_mode,
+        ups_connection_lost,
+        ups_connected,
+    ))(msg)
+}
+
+fn ups_ac_mode(input: &str) -> nom::IResult<&str, DsmEvent> {
+    let (input, _) = tag("The UPS device connected to ")(input)?;
+    let (input, name) = is_not(" ")(input)?;
+    let (input, _) = tag(" has returned to AC mode.")(input)?;
+    Ok((input, DsmEvent::UpsAcMode(name.trim().into())))
+}
+
+fn ups_connection_lost(input: &str) -> nom::IResult<&str, DsmEvent> {
+    let (input, name) = is_not(" ")(input)?;
+    let (input, _) = tag(" has lost the connection to the UPS.")(input)?;
+    Ok((input, DsmEvent::UpsConnectionLost(name.trim().into())))
+}
+
+fn ups_connected(input: &str) -> nom::IResult<&str, DsmEvent> {
+    let (input, name) = is_not(" ")(input)?;
+    let (input, _) = tag(" has connected to the UPS device.")(input)?;
+    Ok((input, DsmEvent::UpsConnected(name.trim().into())))
 }
 
 fn ups_battery_mode(input: &str) -> nom::IResult<&str, DsmEvent> {
@@ -53,7 +81,7 @@ fn ups_battery_mode(input: &str) -> nom::IResult<&str, DsmEvent> {
 
 fn ups_low_battery(input: &str) -> nom::IResult<&str, DsmEvent> {
     let (input, _) = tag("The UPS device connected to ")(input)?;
-    let (input, name) = is_not(". ")(input)?;
+    let (input, name) = is_not(" ")(input)?;
     let (input, _) = tag(" has reached low battery.")(input)?;
     Ok((input, DsmEvent::UpsLowBattery(name.trim().into())))
 }
@@ -140,6 +168,43 @@ From %HOSTNAME%";
             name: "%HOSTNAME%".to_string(),
             battery_msg: Some("%BATTERY_STRING%".to_string()),
         });
+        dbg!(remainder_of_msg); // This doesn't show by default unless the test fails
+        assert_eq!(result, expected);
+    }
+
+    #[test]
+    fn case_generic_ac_mode() {
+        let event_msg = "The UPS device connected to %HOSTNAME% has returned to AC mode.
+
+From %HOSTNAME%";
+
+        let (remainder_of_msg, result) = parse_msg(event_msg).expect("This one should pass");
+        let expected = DsmEvent::UpsAcMode(Host::new("%HOSTNAME%".to_string()));
+        dbg!(remainder_of_msg); // This doesn't show by default unless the test fails
+        assert_eq!(result, expected);
+    }
+
+    #[test]
+    fn case_generic_connection_lost() {
+        let event_msg =
+"%HOSTNAME% has lost the connection to the UPS. Please go to DSM > Control Panel > Hardware & Power > UPS to check the server settings.
+
+From %HOSTNAME%";
+
+        let (remainder_of_msg, result) = parse_msg(event_msg).expect("This one should pass");
+        let expected = DsmEvent::UpsConnectionLost(Host::new("%HOSTNAME%".to_string()));
+        dbg!(remainder_of_msg); // This doesn't show by default unless the test fails
+        assert_eq!(result, expected);
+    }
+
+    #[test]
+    fn case_generic_connected() {
+        let event_msg = "%HOSTNAME% has connected to the UPS device.
+
+From %HOSTNAME%";
+
+        let (remainder_of_msg, result) = parse_msg(event_msg).expect("This one should pass");
+        let expected = DsmEvent::UpsConnected(Host::new("%HOSTNAME%".to_string()));
         dbg!(remainder_of_msg); // This doesn't show by default unless the test fails
         assert_eq!(result, expected);
     }
