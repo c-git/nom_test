@@ -106,10 +106,41 @@ From COMPUTER2";
     }
 
     #[test]
+    fn case_generic_low_bat() {
+        let event_msg =
+"The UPS device connected to %HOSTNAME% has reached low battery. Charge your UPS or connect it to a power outlet.
+
+All services are shutting down in the meantime and will be restarted once the UPS is recovered.
+
+From %HOSTNAME%";
+
+        let (remainder_of_msg, result) = parse_msg(event_msg).expect("This one should pass");
+        let expected = DsmEvent::UpsLowBattery(Host::new("%HOSTNAME%".to_string()));
+        dbg!(remainder_of_msg); // This doesn't show by default unless the test fails
+        assert_eq!(result, expected);
+    }
+
+    #[test]
     fn case_is_err() {
         let event_msg = "Some random message about something else";
 
         let result: Result<_, _> = parse_msg(event_msg);
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn case_generic_bat_mode() {
+        let event_msg =
+            "The UPS device connected to %HOSTNAME% has entered battery mode. %BATTERY_STRING%
+
+From %HOSTNAME%";
+
+        let (remainder_of_msg, result) = parse_msg(event_msg).expect("This one should pass");
+        let expected = DsmEvent::UpsBatteryMode(Host {
+            name: "%HOSTNAME%".to_string(),
+            battery_msg: Some("%BATTERY_STRING%".to_string()),
+        });
+        dbg!(remainder_of_msg); // This doesn't show by default unless the test fails
+        assert_eq!(result, expected);
     }
 }
